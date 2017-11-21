@@ -7,15 +7,51 @@
 //
 
 import UIKit
+import Firebase
 
 @UIApplicationMain
 class AppDelegate: UIResponder, UIApplicationDelegate {
 
     var window: UIWindow?
-
+    
+    //fetch the current view controller
+    class func topViewController(base: UIViewController? = UIApplication.shared.keyWindow?.rootViewController) -> UIViewController? {
+        if let nav = base as? UINavigationController { return topViewController(base: nav.visibleViewController) }
+        if let tab = base as? UITabBarController { return topViewController(base: tab.selectedViewController) }
+        if let presented = base?.presentedViewController { return topViewController(base: presented) }
+        return base
+    }
+    
+    class func activate(extraCompletion: (() -> Void)?) {
+        //observer action, when it will get called when it triggered
+        func actionForObserver() {
+            AppDelegate.topViewController()?.pushAlertForSimultaneouslyLogin {
+                curUser?.inactivate()
+                AppDelegate.activate(extraCompletion: nil)
+            }
+        }
+        
+        //completion of successful activating
+        func successfulCompletion() { AppDelegate.topViewController()?.loadData() }
+        
+        //load the login view if the user hasn't loggin yet
+        if curUser == nil, let userID = dataService.currentUserID {
+            curUser = CurrentUser(key: userID)
+        } else { AppDelegate.topViewController()?.goToLoginView() }
+        
+        //set up the observer
+        let win = UIApplication.shared.windows.last!
+        curUser?.activate(observerAction: { actionForObserver() }, completion: { (errMsg) in
+            if let m = errMsg { ProgressHud.message(to: win, msg: m) } else {
+                successfulCompletion()
+                extraCompletion?()
+            }
+        })
+    }
 
     func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplicationLaunchOptionsKey: Any]?) -> Bool {
         // Override point for customization after application launch.
+        FIRApp.configure()
         return true
     }
 
@@ -25,8 +61,7 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
     }
 
     func applicationDidEnterBackground(_ application: UIApplication) {
-        // Use this method to release shared resources, save user data, invalidate timers, and store enough application state information to restore your application to its current state in case it is terminated later.
-        // If your application supports background execution, this method is called instead of applicationWillTerminate: when the user quits.
+        curUser?.inactivate()
     }
 
     func applicationWillEnterForeground(_ application: UIApplication) {
@@ -34,13 +69,11 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
     }
 
     func applicationDidBecomeActive(_ application: UIApplication) {
-        // Restart any tasks that were paused (or not yet started) while the application was inactive. If the application was previously in the background, optionally refresh the user interface.
+        AppDelegate.activate(extraCompletion: nil)
     }
 
     func applicationWillTerminate(_ application: UIApplication) {
         // Called when the application is about to terminate. Save data if appropriate. See also applicationDidEnterBackground:.
     }
-
-
 }
 
